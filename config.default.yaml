@@ -1,0 +1,82 @@
+model: deepseek-v4-pro
+max_context_tokens: 1000000
+max_output_tokens: 8192
+
+# Workspace — where SOUL.md, MEMORY.md, HEARTBEAT.md live
+workspace_dir: ~/.deskflow/workspace
+
+# Skills — user-created skills override bundled ones
+skills_dir: ~/.deskflow/skills
+
+safety:
+  auto_approve_safe: true
+  require_confirmation: dangerous  # "risky", "dangerous", or "all"
+  shell_allowlist:
+    - "ls"
+    - "cat"
+    - "pwd"
+    - "which"
+    - "echo"
+    - "date"
+    - "whoami"
+    - "uname"
+    - "sw_vers"
+    - "head"
+    - "tail"
+    - "wc"
+    - "find"
+    - "grep"
+  shell_blocklist:
+    - "rm -rf /"
+    - "sudo rm"
+    - "mkfs"
+    - "dd if="
+    - "> /dev/"
+
+memory:
+  enabled: true
+  db_path: ~/.deskflow/memory.db
+  max_context_facts: 20
+
+tools:
+  enabled:
+    # Screen understanding (agent's eyes)
+    - get_ui_elements
+    - ocr_screen
+    - screenshot
+    # Window management
+    - get_windows
+    - move_resize_window
+    - focus_window
+    # Input control
+    - click_at
+    - type_text
+    - press_key
+    - scroll
+    - drag
+    # App control
+    - open_app
+    - close_app
+    - list_running_apps
+    # Shell & scripting
+    - shell
+    - applescript
+    - run_python
+    # File operations
+    - read_file
+    - write_file
+    - list_directory
+    - search_files
+    - move_file
+    - delete_file
+    # Browser
+    - browser_open_url
+    - browser_get_page_content
+    - browser_list_tabs
+    - browser_switch_tab
+    # Clipboard & system
+    - get_clipboard
+    - set_clipboard
+    - get_system_info
+    - set_system_setting
+    - send_notification
