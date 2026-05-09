@@ -6,12 +6,18 @@ from openai import OpenAI
 
 
 class DeepSeekClient:
-    def __init__(self, api_key: str, model: str = "deepseek-v4-pro") -> None:
+    def __init__(
+        self,
+        api_key: str,
+        model: str = "deepseek-v4-pro",
+        fast_model: str = "deepseek-chat",
+    ) -> None:
         self._client = OpenAI(
             api_key=api_key,
             base_url="https://api.deepseek.com",
         )
         self.model = model
+        self.fast_model = fast_model
 
     def create_message(
         self,
@@ -33,3 +39,21 @@ class DeepSeekClient:
             kwargs["tool_choice"] = "auto"
 
         return self._client.chat.completions.create(**kwargs)
+
+    def generate_text(
+        self,
+        prompt: str,
+        max_tokens: int = 4096,
+    ) -> str:
+        """Generate text using the fast model (deepseek-chat).
+
+        Use this for content generation tasks like writing documents,
+        brainstorming, drafting emails, etc. — much faster than the
+        reasoning model.
+        """
+        response = self._client.chat.completions.create(
+            model=self.fast_model,
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=max_tokens,
+        )
+        return response.choices[0].message.content or ""

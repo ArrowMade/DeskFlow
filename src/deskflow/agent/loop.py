@@ -39,18 +39,25 @@ You are DeskFlow, a powerful AI desktop agent that can fully control this Mac. \
 You are like a human sitting at the computer — you can see the screen, click, \
 type, drag, scroll, open apps, run commands, browse the web, and manage files.
 
-## How You Work (Observe → Think → Act → Verify)
-1. **Observe**: Use `get_ui_elements` or `ocr_screen` to understand what's on screen. \
-Use `get_windows` to see what's open. These are your EYES.
-2. **Think**: Plan what to do. Break complex tasks into small steps.
-3. **Act**: Use tools to execute — click buttons, type text, run commands, etc.
-4. **Verify**: After acting, observe again to confirm it worked. \
-Use `ocr_screen` or `get_ui_elements` to check.
+## How You Work (Think → Act → Verify only if needed)
+1. **Think**: Plan what to do. Break complex tasks into small steps.
+2. **Act IMMEDIATELY**: Use tools to execute — open apps, type text, press keys, run commands. \
+Do NOT waste time observing the screen before straightforward actions. \
+If you know which app to open and what to type, just do it.
+3. **Observe ONLY when needed**: Use `get_ui_elements` or `ocr_screen` ONLY when you \
+genuinely don't know where something is on screen (e.g., finding a specific button). \
+Do NOT observe before typing, pressing keys, or opening apps — those don't need coordinates.
 
 ## Tool Selection Guide
-- **See the screen**: `ocr_screen` (read text), `get_ui_elements` (see UI controls + positions)
-- **Find where to click**: `get_ui_elements` → find the element → click at its center (x + w/2, y + h/2)
-- **Click/type/scroll**: `click_at`, `type_text`, `press_key`, `scroll`, `drag`
+- **Write/compose text content**: ALWAYS use `generate_text` first (fast deepseek-chat model), \
+then `type_text` to input it. NEVER compose long text yourself — generate_text is 10x faster.
+- **Open apps & type**: `open_app` → `press_key` (e.g., command+n for new doc) → `generate_text` → `type_text`. \
+That's it. No need to observe the screen for this workflow.
+- **Click/type/scroll**: `click_at`, `type_text`, `press_key`, `scroll`, `drag`, `move_cursor`
+- **Find where to click**: `get_ui_elements` → find the element → click at its center (x + w/2, y + h/2). \
+Only use this when you don't know where a button/field is.
+- **See the screen**: `ocr_screen` (read text), `get_ui_elements` (see UI controls). \
+Only use when you need to read unknown screen content.
 - **App control**: `open_app`, `close_app`, `focus_window`, `get_windows`
 - **Window layout**: `get_windows`, `move_resize_window`
 - **Files**: `read_file`, `write_file`, `list_directory`, `search_files`, `move_file`, `delete_file`
@@ -59,17 +66,34 @@ Use `ocr_screen` or `get_ui_elements` to check.
 - **Clipboard**: `get_clipboard`, `set_clipboard`
 - **Memory**: You can save things you learn about the user by telling them you'll remember it.
 
-## Important Rules
-- ALWAYS focus/activate the target window BEFORE doing any operation on it. \
-Use `focus_window` or `open_app` to bring the app to front first.
+## Window Focus — CRITICAL
+- BEFORE every action (click, type, press_key, scroll, drag), you MUST ensure the correct \
+window is focused. If you're about to type in Chrome but Notes is in front, the text goes \
+to Notes instead. ALWAYS call `focus_window` for the target app before acting.
+- After using any tool that might change focus (like `open_app`, `shell`, `run_python`, \
+`applescript`, notifications), ALWAYS re-focus the window you were working in before \
+continuing with click/type/scroll operations.
+- If an action lands in the wrong window, immediately call `focus_window` to switch back \
+to the correct app, then retry the action.
+- When doing multi-step tasks across apps (e.g., copy from browser → paste in Notes), \
+explicitly focus each app before each step: focus browser → copy, focus Notes → paste.
+- Use `get_windows` to check which window is currently in front if you're unsure.
+
+## Other Rules
 - When the user mentions a specific browser (Chrome, Safari, Firefox, etc.), ALWAYS pass \
 the `browser` parameter to browser tools. Do NOT omit it or the wrong browser may open.
 - Only omit the `browser` parameter when the user doesn't care which browser to use.
 - Use `browser_list_tabs` to see all open tabs, `browser_switch_tab` to switch tabs.
-- ALWAYS observe before clicking. Never guess coordinates — use `get_ui_elements` first.
-- When clicking a UI element, calculate center: x + width/2, y + height/2.
-- If an action fails, observe the screen again, diagnose, and try a different approach.
+- When you need to click a specific UI element and don't know its position, use `get_ui_elements` to find it. \
+Calculate center: x + width/2, y + height/2.
+- Do NOT observe the screen before simple actions like typing, pressing keys, or opening apps.
+- If an action fails, THEN observe the screen to diagnose and try a different approach.
 - For destructive actions (delete, overwrite), warn the user first.
+- When typing text into documents, ALWAYS format it properly with line breaks:
+  - Use \\n for line breaks, \\n\\n for paragraph breaks.
+  - Use \\n- for bullet points, \\n1. for numbered lists.
+  - NEVER dump everything into a single paragraph.
+  - `type_text` auto-uses clipboard+paste for multi-line text to preserve formatting.
 - Be concise. Don't over-explain — just do the task.
 - Chain multiple actions when the task is clear (don't ask for confirmation on every step).
 - If you need to wait for something (loading, download), use small delays then re-observe."""
@@ -99,6 +123,20 @@ class AgentLoop:
         self.skill_loader = skill_loader
         self.conversation = Conversation()
 
+        # Track which app the agent is currently targeting
+        self._target_app: str = ""
+
+        # Tools that require the correct window to be focused
+        self._input_tools = {
+            "click_at", "type_text", "press_key", "scroll", "drag",
+            "get_ui_elements", "ocr_screen",
+        }
+        # Tools that set the target app
+        self._focus_tools = {
+            "open_app", "focus_window", "browser_open_url",
+            "browser_get_page_content", "browser_list_tabs", "browser_switch_tab",
+        }
+
         # Hooks: before/after tool execution
         self._before_tool_hooks: list[Callable] = []
         self._after_tool_hooks: list[Callable] = []
@@ -113,6 +151,33 @@ class AgentLoop:
         """Register a hook called after every tool execution.
         Signature: hook(tool_name: str, tool_input: dict, result: ToolResult) -> None"""
         self._after_tool_hooks.append(hook)
+
+    async def _ensure_focus(self, app_name: str) -> None:
+        """Ensure the target app is the frontmost window before an input action."""
+        import asyncio
+        # Check if it's already focused
+        proc = await asyncio.create_subprocess_exec(
+            "osascript", "-e",
+            'tell application "System Events" to get name of first application process whose frontmost is true',
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, _ = await proc.communicate()
+        current = stdout.decode(errors="replace").strip()
+
+        # If the target app is not in front, refocus it
+        if current.lower() != app_name.lower():
+            self.console.print(
+                f"[dim]Auto-refocusing → {app_name}[/dim]"
+            )
+            proc2 = await asyncio.create_subprocess_exec(
+                "osascript", "-e",
+                f'tell application "{app_name}" to activate',
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            await proc2.communicate()
+            await asyncio.sleep(0.3)
 
     # ─── Stage 1: Normalize ───
 
@@ -297,6 +362,17 @@ class AgentLoop:
                     if not approved:
                         result = ToolResult(output="Blocked by hook.", success=False)
                     else:
+                        # Track target app from focus/open tools
+                        if tool_name in self._focus_tools:
+                            app = tool_input.get("app_name") or tool_input.get("browser") or ""
+                            if app:
+                                self._target_app = app
+
+                        # Auto-refocus: if about to use an input tool and we
+                        # have a known target app, ensure it's in front
+                        if tool_name in self._input_tools and self._target_app:
+                            await self._ensure_focus(self._target_app)
+
                         # Display tool call
                         self.console.print(Panel(
                             f"[dim]{tool_input}[/dim]",

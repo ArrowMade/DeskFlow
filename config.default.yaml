@@ -54,6 +54,7 @@ tools:
     - press_key
     - scroll
     - drag
+    - move_cursor
     # App control
     - open_app
     - close_app
@@ -80,3 +81,5 @@ tools:
     - get_system_info
     - set_system_setting
     - send_notification
+    # Fast text generation
+    - generate_text

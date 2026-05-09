@@ -31,7 +31,7 @@ class ToolRegistry:
         return list(self._tools.values())
 
 
-def build_default_registry(enabled_tools: list[str] | None = None) -> ToolRegistry:
+def build_default_registry(enabled_tools: list[str] | None = None, client=None) -> ToolRegistry:
     """Build a registry with all available tools, filtered by enabled list."""
     from .shell import ShellTool
     from .applescript import AppleScriptTool
@@ -44,12 +44,16 @@ def build_default_registry(enabled_tools: list[str] | None = None) -> ToolRegist
     from .clipboard import GetClipboardTool, SetClipboardTool
     from .notifications import SendNotificationTool
     from .browser import BrowserOpenURLTool, BrowserGetPageContentTool, BrowserTabsTool, BrowserSwitchTabTool
-    from .keyboard_mouse import TypeTextTool, PressKeyTool, ClickAtTool, ScrollTool, DragTool
+    from .keyboard_mouse import TypeTextTool, PressKeyTool, ClickAtTool, ScrollTool, DragTool, MoveCursorTool
     from .system import GetSystemInfoTool, SetSystemSettingTool
     from .python_exec import RunPythonTool
     from .accessibility import GetUIElementsTool
     from .ocr import OCRScreenTool
     from .window import GetWindowsTool, MoveResizeWindowTool, FocusWindowTool
+    from .text_gen import GenerateTextTool
+
+    # GenerateTextTool needs the client for fast text generation
+    gen_text_tool = GenerateTextTool(client=client)
 
     all_tools: list[BaseTool] = [
         # Screen understanding (agent's eyes)
@@ -66,6 +70,7 @@ def build_default_registry(enabled_tools: list[str] | None = None) -> ToolRegist
         PressKeyTool(),
         ScrollTool(),
         DragTool(),
+        MoveCursorTool(),
         # App control
         OpenAppTool(),
         CloseAppTool(),
@@ -94,6 +99,8 @@ def build_default_registry(enabled_tools: list[str] | None = None) -> ToolRegist
         SetSystemSettingTool(),
         # Notifications
         SendNotificationTool(),
+        # Fast text generation (uses deepseek-chat)
+        gen_text_tool,
     ]
 
     registry = ToolRegistry()

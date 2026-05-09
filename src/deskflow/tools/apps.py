@@ -36,7 +36,30 @@ class OpenAppTool(BaseTool):
                 output=f"Failed to open {app_name}: {stderr.decode(errors='replace')}",
                 success=False,
             )
-        return ToolResult(output=f"Opened {app_name}")
+
+        # Brief pause to let the app activate, then verify once
+        await asyncio.sleep(0.15)
+        check = await asyncio.create_subprocess_exec(
+            "osascript", "-e",
+            'tell application "System Events" to get name of first application process whose frontmost is true',
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, _ = await check.communicate()
+        front = stdout.decode(errors="replace").strip()
+        if front.lower() != app_name.lower():
+            # One retry if not yet focused
+            await asyncio.sleep(0.3)
+            retry = await asyncio.create_subprocess_exec(
+                "osascript", "-e", f'tell application "{app_name}" to activate',
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            await retry.communicate()
+
+        return ToolResult(
+            output=f"Opened {app_name} (frontmost and ready). You can now type or press keys immediately."
+        )
 
 
 class CloseAppTool(BaseTool):

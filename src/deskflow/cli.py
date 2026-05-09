@@ -195,7 +195,7 @@ def main() -> None:
         console.print(f"[green]API key saved to {config_file}[/green]\n")
 
     client = DeepSeekClient(api_key=config.api_key, model=config.model)
-    registry = build_default_registry(config.enabled_tools)
+    registry = build_default_registry(config.enabled_tools, client=client)
 
     # Safety
     safety = None
